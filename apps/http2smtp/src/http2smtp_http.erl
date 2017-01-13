@@ -91,7 +91,7 @@ init({tcp, _}, Req, Opts) ->
 handle(Req, State = #state{rate_limit = Limit}) ->
     {ok, case http2smtp_rate:exceeds(Limit) of
              false -> handle_request(Req, State);
-             true  -> reply(429, Req, "Rate limit exceeded", [])
+             true  -> reply(429, Req, "Rate limit exceeded~n", [])
          end, State}.
 
 %%------------------------------------------------------------------------------
@@ -109,7 +109,7 @@ terminate(_Reason, _Req, #state{}) -> ok.
 handle_request(Req, State) ->
     case cowboy_req:method(Req) of
         {<<"POST">>, NewReq} -> handle_post(NewReq, State);
-        {M, NewReq}          -> reply(405, NewReq, "Invalid method ~s", [M])
+        {M, NewReq}          -> reply(405, NewReq, "Invalid method ~s~n", [M])
     end.
 
 %%------------------------------------------------------------------------------
@@ -124,10 +124,10 @@ handle_post(Req, State = #state{body_opts = Opts}) ->
                     {ok, Data, NextReq} = cowboy_req:part_body(NewReq, Opts),
                     handle_file(Filename, Type, SubType, Data, NextReq, State);
                 _ ->
-                    reply(400, Req, "Cannot parse content type ~s", [ContentType])
+                    reply(400, Req, "Cannot handle ~s~n", [ContentType])
             end;
         _ ->
-            reply(400, Req, "No multipart content", [])
+            reply(400, Req, "No multipart content~n", [])
     end.
 
 %%------------------------------------------------------------------------------
@@ -157,11 +157,11 @@ handle_file(Filename, Type, SubType, Data, Req, State) ->
            {State#state.from, [State#state.to], Mail},
            State#state.smtp_opts) of
         {error, Reason} ->
-            reply(500, Req, "Failed to send mail: ~w", [Reason]);
+            reply(500, Req, "Failed to send mail: ~w~n", [Reason]);
         {error, Reason, Failure} ->
-            reply(500, Req, "Failed to send mail: ~w", [{Reason, Failure}]);
+            reply(500, Req, "Failed to send mail: ~w~n", [{Reason, Failure}]);
         Receipt when is_binary(Receipt) ->
-            reply(200, Req, "mail accepted", [])
+            reply(200, Req, "mail accepted~n", [])
     end.
 
 %%------------------------------------------------------------------------------

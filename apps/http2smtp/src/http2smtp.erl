@@ -61,7 +61,7 @@ init([]) ->
     HostMatch = application:get_env(?MODULE, host_match, ?HOST_MATCH),
     Env = [{dispatch, cowboy_router:compile([{HostMatch, Paths}])}],
     Port = application:get_env(?MODULE, http_port, ?PORT),
-    error_logger:info_msg("Listening on HTTP port ~w", [Port]),
+    error_logger:info_msg("Listening on HTTP port ~w~n", [Port]),
     ProtoOpts = [{compress, true}, {env, Env}],
     {ok, _} = cowboy:start_http(http, Acceptors, [{port, Port}], ProtoOpts),
     {ok, {{one_for_one, 5, 1}, [worker(http2smtp_rate, [])]}}.

@@ -81,15 +81,15 @@ init([]) -> {ok, schedule_timer(#state{})}.
 %%------------------------------------------------------------------------------
 handle_call(count, _From, State = #state{count = Count}) ->
     {reply, Count + 1, State#state{count = Count + 1}};
-handle_call(Req, From, State) ->
-    error_logger:info_msg("Received unexpected call ~w from ~w", [Req, From]),
+handle_call(Request, From, State) ->
+    error_logger:error_msg("Unexpected call ~w from ~w~n", [Request, From]),
     {reply, undef, State}.
 
 %%------------------------------------------------------------------------------
 %% @private
 %%------------------------------------------------------------------------------
-handle_cast(Req, State) ->
-    error_logger:info_msg("Received unexpected cast ~w", [Req]),
+handle_cast(Request, State) ->
+    error_logger:error_msg("Unexpected cast ~w~n", [Request]),
     {noreply, State}.
 
 %%------------------------------------------------------------------------------
@@ -98,7 +98,7 @@ handle_cast(Req, State) ->
 handle_info({timeout, Ref, reset}, State = #state{timer = Ref}) ->
     {noreply, schedule_timer(State#state{count = 0})};
 handle_info(Info, State) ->
-    error_logger:info_msg("Received unexpected info ~w", [Info]),
+    error_logger:info_msg("Unexpected info ~w~n", [Info]),
     {noreply, State}.
 
 %%------------------------------------------------------------------------------
