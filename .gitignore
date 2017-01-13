@@ -1,0 +1,17 @@
+*.beam
+*.o
+*.plt
+*.swo
+*.swp
+.erlang.cookie
+.eunit
+.rebar
+.rebar3
+_*
+_build
+ebin
+erl_crash.dump
+log
+logs
+
+/http2smtp-*

@@ -1,0 +1,8 @@
+[{<<"cf">>,{pkg,<<"cf">>,<<"0.2.1">>},2},
+ {<<"cowboy">>,{pkg,<<"cowboy">>,<<"1.0.4">>},0},
+ {<<"cowlib">>,{pkg,<<"cowlib">>,<<"1.0.2">>},1},
+ {<<"erlang_localtime">>,{pkg,<<"erlang_localtime">>,<<"1.0.0">>},1},
+ {<<"erlware_commons">>,{pkg,<<"erlware_commons">>,<<"0.20.0">>},1},
+ {<<"gen_smtp">>,{pkg,<<"gen_smtp">>,<<"0.11.0">>},0},
+ {<<"qdate">>,{pkg,<<"qdate">>,<<"0.4.3">>},0},
+ {<<"ranch">>,{pkg,<<"ranch">>,<<"1.2.1">>},1}].
