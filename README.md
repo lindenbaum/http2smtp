@@ -44,14 +44,13 @@ important things here. For further customisation you'll need to read the source.
   Options passed to `cowboy`'s body read functions. Defaults to `length` and
   `read_length` set to 8MiB.
 
-* `{smtp_opts, Opts :: proplists:proplist()}`
+Additionally, you'll need the mandatory SMTP options (e.g. `relay`) that will be
+passed to the `gen_smtp`'s client send function. These can be directly (plain)
+embedded into the application environment of _http2smtp_.
 
-  Options passed to `gen_smtp`'s client send function. This option has no
-  defaults and you'll need at least the `relay` option.
-
-Values for `To` and `Cc` headers. The values for these SMTP headers may be set
-per context or globally. E.g. if you have special mail destinations for the
-context `/custom` you could configure the application like to following:
+The values for the `To` and `Cc` SMTP headers may be set per context or globally.
+E.g. if you have special mail destinations for the context `/custom` you could
+configure the application like to following:
 
 ```erlang
 [
@@ -64,6 +63,7 @@ context `/custom` you could configure the application like to following:
     ]},
    {to, <<"default@example.org">>},
    {cc, [<<"default-cc@example.org">>]},
+   {relay, "smtp.example.org"},
    ...
   ]}
 ]
