@@ -27,7 +27,7 @@
 -behaviour(gen_server).
 
 %% API
--export([exceeds/1]).
+-export([exceeds/2]).
 
 %% Internal API
 -export([start_link/0]).
@@ -46,11 +46,12 @@
 
 %%------------------------------------------------------------------------------
 %% @doc
-%% Returns whether the current rate (count) exceeds the given limit.
+%% Returns whether the current rate (count) for a given context exceeds the
+%% given limit.
 %% @end
 %%------------------------------------------------------------------------------
--spec exceeds(pos_integer()) -> boolean().
-exceeds(Limit) -> gen_server:call(?MODULE, count) > Limit.
+-spec exceeds(term(), pos_integer()) -> boolean().
+exceeds(Context, Limit) -> gen_server:call(?MODULE, {count, Context}) > Limit.
 
 %%%=============================================================================
 %%% Internal API
@@ -68,8 +69,8 @@ start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 %%%=============================================================================
 
 -record(state, {
-          timer     :: reference(),
-          count = 0 :: non_neg_integer()}).
+          timer       :: reference(),
+          counts = [] :: [{term(), non_neg_integer()}]}).
 
 %%------------------------------------------------------------------------------
 %% @private
@@ -79,8 +80,13 @@ init([]) -> {ok, schedule_timer(#state{})}.
 %%------------------------------------------------------------------------------
 %% @private
 %%------------------------------------------------------------------------------
-handle_call(count, _From, State = #state{count = Count}) ->
-    {reply, Count + 1, State#state{count = Count + 1}};
+handle_call({count, Context}, _From, State = #state{counts = Counts}) ->
+    {Count, NewCounts} =
+        case lists:keytake(Context, 1, Counts) of
+            {value, {_, C}, Rest} -> {C + 1, [{Context, C + 1} | Rest]};
+            false                 -> {1, [{Context, 1} | Counts]}
+        end,
+    {reply, Count, State#state{counts = NewCounts}};
 handle_call(Request, From, State) ->
     error_logger:error_msg("Unexpected call ~w from ~w~n", [Request, From]),
     {reply, undef, State}.
@@ -96,7 +102,7 @@ handle_cast(Request, State) ->
 %% @private
 %%------------------------------------------------------------------------------
 handle_info({timeout, Ref, reset}, State = #state{timer = Ref}) ->
-    {noreply, schedule_timer(State#state{count = 0})};
+    {noreply, schedule_timer(State#state{counts = []})};
 handle_info(Info, State) ->
     error_logger:info_msg("Unexpected info ~w~n", [Info]),
     {noreply, State}.

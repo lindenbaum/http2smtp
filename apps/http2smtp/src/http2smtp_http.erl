@@ -34,8 +34,8 @@
          terminate/3]).
 
 -define(BODY_OPTS, [{length, 8*1024*1024}, {read_length, 8*1024*1024}]).
+-define(CC, []).
 -define(FROM, list_to_binary("http2smtp@" ++ element(2, inet:gethostname()))).
--define(PATH_MATCH, "/").
 -define(RATE_LIMIT, 2).
 -define(SUBJECT, <<"http2smtp">>).
 -define(TIMEZONE, auto).
@@ -53,9 +53,8 @@
 path_matches() ->
     Env = application:get_all_env(http2smtp),
     Opts = exclude(Env, [included_applications]),
-    PathMatch = proplists:get_value(path_match, Opts, ?PATH_MATCH),
     RateLimit = proplists:get_value(rate_limit, Opts, ?RATE_LIMIT),
-    {[{PathMatch, ?MODULE, Opts}], RateLimit}.
+    {[{"/:context/[...]", ?MODULE, Opts}], RateLimit}.
 
 %%%=============================================================================
 %%% cowboy_http_handler callbacks
@@ -63,6 +62,8 @@ path_matches() ->
 
 -record(state, {
           body_opts  :: proplists:proplist(),
+          cc         :: [binary()],
+          context    :: binary(),
           from       :: binary(),
           rate_limit :: pos_integer(),
           smtp_opts  :: proplists:proplist(),
@@ -74,10 +75,13 @@ path_matches() ->
 %% @private
 %%------------------------------------------------------------------------------
 init({tcp, _}, Req, Opts) ->
-    {to, To} = {to, <<_/binary>>} = lists:keyfind(to, 1, Opts),
-    {ok, Req,
+    {Context, NewReq} = cowboy_req:binding(context, Req),
+    {To, CC} = get_to_and_cc(Context, Opts),
+    {ok, NewReq,
      #state{
         body_opts = proplists:get_value(body_opts, Opts, ?BODY_OPTS),
+        cc = CC,
+        context = Context,
         from = proplists:get_value(from, Opts, ?FROM),
         rate_limit = proplists:get_value(rate_limit, Opts, ?RATE_LIMIT),
         smtp_opts = filter(Opts, [relay, username, password]),
@@ -88,10 +92,10 @@ init({tcp, _}, Req, Opts) ->
 %%------------------------------------------------------------------------------
 %% @private
 %%------------------------------------------------------------------------------
-handle(Req, State = #state{rate_limit = Limit}) ->
-    {ok, case http2smtp_rate:exceeds(Limit) of
+handle(Req, State = #state{context = Context, rate_limit = Limit}) ->
+    {ok, case http2smtp_rate:exceeds(Context, Limit) of
              false -> handle_request(Req, State);
-             true  -> reply(429, Req, "Rate limit exceeded~n", [])
+             true  -> reply(429, Req, "Rate limit exceeded on /~s~n", [Context])
          end, State}.
 
 %%------------------------------------------------------------------------------
@@ -115,54 +119,151 @@ handle_request(Req, State) ->
 %%------------------------------------------------------------------------------
 %% @private
 %%------------------------------------------------------------------------------
-handle_post(Req, State = #state{body_opts = Opts}) ->
-    case cowboy_req:part(Req) of
-        {ok, Hdrs, NewReq} ->
-            {file, _, Filename, ContentType, _} = cow_multipart:form_data(Hdrs),
-            case binary:split(ContentType, <<"/">>, [trim]) of
-                [Type, SubType] when Type =/= <<>>, SubType =/= <<>> ->
-                    {ok, Data, NextReq} = cowboy_req:part_body(NewReq, Opts),
-                    handle_file(Filename, Type, SubType, Data, NextReq, State);
-                _ ->
-                    reply(400, Req, "Cannot handle ~s~n", [ContentType])
-            end;
-        _ ->
-            reply(400, Req, "No multipart content~n", [])
+handle_post(Req, State) ->
+    case cowboy_req:parse_header(<<"content-type">>, Req) of
+        {ok, {<<"application">>, <<"x-www-form-urlencoded">>, []}, NewReq} ->
+            handle_urlencoded(NewReq, State);
+        {ok, {<<"multipart">>, <<"form-data">>, _}, NewReq} ->
+            handle_multipart(NewReq, State);
+        Other ->
+            reply(400, Req, "Failed to parse content type ~w~n", [Other])
     end.
 
 %%------------------------------------------------------------------------------
 %% @private
 %%------------------------------------------------------------------------------
-handle_file(Filename, Type, SubType, Data, Req, State) ->
+handle_urlencoded(Req, State = #state{body_opts = Opts}) ->
+    {ok, Query, NewReq} = cowboy_req:body_qs(Req, Opts),
+    From = proplists:get_value(<<"from">>, Query, State#state.from),
+    Subject = proplists:get_value(<<"subject">>, Query, State#state.subject),
+    Body = to_body(proplists:get_value(<<"body">>, Query)),
+    Filename = proplists:get_value(<<"filename">>, Query, <<"untitled">>),
+    ContentType = <<"application/octet-stream">>,
+    Data = proplists:get_value(<<"data">>, Query, <<>>),
+    Attachments = normalize_attachments([{Filename, ContentType, Data}]),
+    send(From, Subject, Body, Attachments, NewReq, State).
+
+%%------------------------------------------------------------------------------
+%% @private
+%%------------------------------------------------------------------------------
+handle_multipart(Req, State = #state{from = From, subject = Subject}) ->
+    handle_multipart(Req, {From, Subject, undefined, []}, State).
+handle_multipart(Req, {From, Subject, Body, Files}, State) ->
+    case cowboy_req:part(Req) of
+        {ok, Hdrs, NewReq} ->
+            Opts = State#state.body_opts,
+            FormData = cow_multipart:form_data(Hdrs),
+            {ok, Data, NextReq} = cowboy_req:part_body(NewReq, Opts),
+            Acc = case FormData of
+                      {file, _, Filename, ContentType, _} ->
+                          File = {Filename, ContentType, Data},
+                          {From, Subject, Body, [File | Files]};
+                      {data, <<"from">>} ->
+                          {Data, Subject, Body, Files};
+                      {data, <<"subject">>} ->
+                          {From, Data, Body, Files};
+                      {data, <<"body">>} ->
+                          {From, Subject, Data, Files};
+                      {data, FieldName} ->
+                          error_logger:info_msg(
+                            "Ignoring field ~s with data ~1024p~n",
+                            [FieldName, Data]),
+                          {From, Subject, Body, Files}
+                  end,
+            handle_multipart(NextReq, Acc, State);
+        {done, NewReq} ->
+            Attachments = normalize_attachments(lists:reverse(Files)),
+            send(From, Subject, to_body(Body), Attachments, NewReq, State)
+    end.
+
+%%------------------------------------------------------------------------------
+%% @private
+%%------------------------------------------------------------------------------
+send(From, Subject, Body, Attachments, Req, State) ->
     Hdrs = [
-            {<<"From">>, State#state.from},
+            {<<"From">>, From},
             {<<"To">>, State#state.to},
-            {<<"Subject">>, State#state.subject},
+            {<<"Subject">>, Subject},
             {<<"Message-ID">>, message_id()},
             {<<"Date">>, datestr(State#state.timezone)},
             {<<"MIME-Version">>, <<"1.0">>},
             {<<"X-Mailer">>, <<"http2smtp">>}
-           ],
-    Att = [
-           {<<"multipart">>, <<"alternative">>, [], [], []},
-           {Type, SubType, [],
-            [
-             {<<"transfer-encoding">>, <<"base64">>},
-             {<<"disposition">>, <<"attachment">>},
-             {<<"disposition-params">>, [{<<"filename">>, Filename}]}
-            ], Data}
-          ],
+           ] ++ to_cc(State),
+    Att = [{<<"multipart">>, <<"alternative">>, [], [], Body} | Attachments],
     Mail = mimemail:encode({<<"multipart">>, <<"mixed">>, Hdrs, [], Att}, []),
     case gen_smtp_client:send_blocking(
-           {State#state.from, [State#state.to], Mail},
+           {From, [State#state.to], Mail},
            State#state.smtp_opts) of
         {error, Reason} ->
-            reply(500, Req, "Failed to send mail: ~w~n", [Reason]);
+            reply(500, Req, "Failed to send mail: ~1024p~n", [Reason]);
         {error, Reason, Failure} ->
-            reply(500, Req, "Failed to send mail: ~w~n", [{Reason, Failure}]);
+            reply(500, Req, "Failed to send mail: ~1024p~n", [{Reason, Failure}]);
         Receipt when is_binary(Receipt) ->
             reply(200, Req, "mail accepted~n", [])
     end.
+
+%%------------------------------------------------------------------------------
+%% @private
+%%------------------------------------------------------------------------------
+normalize_attachments(Files) ->
+    normalize_attachments(Files, []).
+normalize_attachments([], Acc) ->
+    lists:reverse(Acc);
+normalize_attachments([{Filename, ContentType, <<>>} | Rest], Acc) ->
+    error_logger:info_msg("File ~s of type ~s is empty~n",
+                          [Filename, ContentType]),
+    normalize_attachments(Rest, Acc);
+normalize_attachments([{Filename, ContentType, Data} | Rest], Acc) ->
+    case binary:split(ContentType, <<"/">>, [trim]) of
+        [<<"application">>, <<"octet-stream">>] ->
+            {Type, SubType} = guess_content_type(Filename),
+            error_logger:info_msg("Including file ~s of type ~s/~s~n",
+                                  [Filename, Type, SubType]),
+            normalize_attachments(
+              Rest, [to_attachment(Type, SubType, Filename, Data) | Acc]);
+        [Type, SubType] when Type =/= <<>>, SubType =/= <<>> ->
+            error_logger:info_msg("Including file ~s of type ~s~n",
+                                  [Filename, ContentType]),
+            normalize_attachments(
+              Rest, [to_attachment(Type, SubType, Filename, Data) | Acc]);
+        _ ->
+            error_logger:info_msg("Ignoring file ~s of type ~s~n",
+                                  [Filename, ContentType]),
+            normalize_attachments(Rest, Acc)
+    end.
+
+%%------------------------------------------------------------------------------
+%% @private
+%%------------------------------------------------------------------------------
+to_attachment(Type, SubType, Filename, Data) ->
+    {Type, SubType, [],
+     [
+      {<<"transfer-encoding">>, <<"base64">>},
+      {<<"disposition">>, <<"attachment">>},
+      {<<"disposition-params">>, [{<<"filename">>, Filename}]}
+     ], Data}.
+
+%%------------------------------------------------------------------------------
+%% @private
+%%------------------------------------------------------------------------------
+to_body(undefined) ->
+    [];
+to_body(<<>>) ->
+    [];
+to_body(Text) ->
+    [{<<"text">>, <<"plain">>, [],
+      [
+       {<<"content-type-params">>, [ {<<"charset">>, <<"utf-8">>} ]},
+       {<<"disposition">>, <<"inline">>},
+       {<<"transfer-encoding">>, <<"quoted-printable">>},
+       {<<"disposition-params">>, []}
+      ], Text}].
+
+%%------------------------------------------------------------------------------
+%% @private
+%%------------------------------------------------------------------------------
+to_cc(#state{cc = []}) -> [];
+to_cc(#state{cc = CC}) -> [{<<"Cc">>, CC}].
 
 %%------------------------------------------------------------------------------
 %% @private
@@ -175,6 +276,22 @@ reply(StatusCode, Req, Fmt, Args) ->
 %%------------------------------------------------------------------------------
 %% @private
 %%------------------------------------------------------------------------------
+get_to_and_cc(Context, Opts) ->
+    ContextCfg = proplists:get_value(Context, Opts, []),
+    To = get_value(to, ContextCfg, Opts, undefined),
+    true = is_mail(To),
+    CC = get_value(cc, ContextCfg, Opts, ?CC),
+    true = lists:all(fun is_mail/1, CC),
+    {To, CC}.
+
+%%------------------------------------------------------------------------------
+%% @private
+%%------------------------------------------------------------------------------
+is_mail(B) when is_binary(B) -> length([true || <<"@">> <= B]) =:= 1.
+
+%%------------------------------------------------------------------------------
+%% @private
+%%------------------------------------------------------------------------------
 message_id() -> integer_to_binary(crypto:rand_uniform(100000000, 999999999)).
 
 %%------------------------------------------------------------------------------
@@ -182,6 +299,19 @@ message_id() -> integer_to_binary(crypto:rand_uniform(100000000, 999999999)).
 %%------------------------------------------------------------------------------
 datestr(Timezone) ->
     qdate:to_string(<<"D, j M Y G:i:s O">>, Timezone, os:timestamp()).
+
+%%------------------------------------------------------------------------------
+%% @private
+%%------------------------------------------------------------------------------
+guess_content_type(Filename) ->
+    {Type, SubType, _} = cow_mimetypes:all(Filename),
+    {Type, SubType}.
+
+%%------------------------------------------------------------------------------
+%% @private
+%%------------------------------------------------------------------------------
+get_value(Key, L1, L2, Default) ->
+    proplists:get_value(Key, L1, proplists:get_value(Key, L2, Default)).
 
 %%------------------------------------------------------------------------------
 %% @private
