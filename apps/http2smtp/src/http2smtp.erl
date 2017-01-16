@@ -18,6 +18,12 @@
 %%% OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 %%%
 %%% @doc
+%%% A simple service that allows mail delivery of HTTP POSTed content. The
+%%% allowed content types are either `application/x-www-form-urlencoded' or
+%%% `multipart/form-data'. While URL-encoded uploads can only handle one file
+%%% attachment the multipart variant allows an unlimited number of attachments.
+%%%
+%%% This module implements the application as well as the top level supervisor.
 %%% @end
 %%%=============================================================================
 
