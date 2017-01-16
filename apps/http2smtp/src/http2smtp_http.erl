@@ -18,6 +18,8 @@
 %%% OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 %%%
 %%% @doc
+%%% This module contains the main application logic implemented as cowboy
+%%% HTTP handler.
 %%% @end
 %%%=============================================================================
 
@@ -54,7 +56,7 @@ path_matches() ->
     Env = application:get_all_env(http2smtp),
     Opts = exclude(Env, [included_applications]),
     RateLimit = proplists:get_value(rate_limit, Opts, ?RATE_LIMIT),
-    {[{"/:context/[...]", ?MODULE, Opts}], RateLimit}.
+    {[{"/[:context]", ?MODULE, Opts}], RateLimit}.
 
 %%%=============================================================================
 %%% cowboy_http_handler callbacks
@@ -84,7 +86,7 @@ init({tcp, _}, Req, Opts) ->
         context = Context,
         from = proplists:get_value(from, Opts, ?FROM),
         rate_limit = proplists:get_value(rate_limit, Opts, ?RATE_LIMIT),
-        smtp_opts = filter(Opts, [relay, username, password]),
+        smtp_opts = [_ | _] = filter(Opts, [relay, username, password]),
         subject = proplists:get_value(subject, Opts, ?SUBJECT),
         timezone = proplists:get_value(timezone, Opts, ?TIMEZONE),
         to = To}}.
@@ -179,6 +181,8 @@ handle_multipart(Req, {From, Subject, Body, Files}, State) ->
 %%------------------------------------------------------------------------------
 %% @private
 %%------------------------------------------------------------------------------
+send(_From, ?SUBJECT, [], [], Req, _State) ->
+    reply(400, Req, "Refusing request without body or attachments", []);
 send(From, Subject, Body, Attachments, Req, State) ->
     Hdrs = [
             {<<"From">>, From},
@@ -199,7 +203,7 @@ send(From, Subject, Body, Attachments, Req, State) ->
         {error, Reason, Failure} ->
             reply(500, Req, "Failed to send mail: ~1024p~n", [{Reason, Failure}]);
         Receipt when is_binary(Receipt) ->
-            reply(200, Req, "mail accepted~n", [])
+            reply(204, Req, "mail accepted~n", [])
     end.
 
 %%------------------------------------------------------------------------------
