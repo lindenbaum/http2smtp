@@ -77,9 +77,12 @@ path_matches() ->
 %% @private
 %%------------------------------------------------------------------------------
 init({tcp, _}, Req, Opts) ->
-    {Context, NewReq} = cowboy_req:binding(context, Req),
+    {{IP, Port}, NewReq} = cowboy_req:peer(Req),
+    log("Handling request from ~w.~w.~w.~w:~w", tuple_to_list(IP) ++ [Port]),
+    {Context, NextReq} = cowboy_req:binding(context, NewReq, <<>>),
+    log("Request context is /~s", [Context]),
     {To, CC} = get_to_and_cc(Context, Opts),
-    {ok, NewReq,
+    {ok, NextReq,
      #state{
         body_opts = proplists:get_value(body_opts, Opts, ?BODY_OPTS),
         cc = CC,
@@ -166,10 +169,8 @@ handle_multipart(Req, {From, Subject, Body, Files}, State) ->
                           {From, Data, Body, Files};
                       {data, <<"body">>} ->
                           {From, Subject, Data, Files};
-                      {data, FieldName} ->
-                          error_logger:info_msg(
-                            "Ignoring field ~s with data ~1024p~n",
-                            [FieldName, Data]),
+                      {data, Field} ->
+                          log("Ignoring field ~s with data ~p~n", [Field, Data]),
                           {From, Subject, Body, Files}
                   end,
             handle_multipart(NextReq, Acc, State);
@@ -199,11 +200,11 @@ send(From, Subject, Body, Attachments, Req, State) ->
            {From, [State#state.to], Mail},
            State#state.smtp_opts) of
         {error, Reason} ->
-            reply(500, Req, "Failed to send mail: ~1024p~n", [Reason]);
+            reply(500, Req, "Failed to send mail: ~p~n", [Reason]);
         {error, Reason, Failure} ->
-            reply(500, Req, "Failed to send mail: ~1024p~n", [{Reason, Failure}]);
+            reply(500, Req, "Failed to send mail: ~p~n", [{Reason, Failure}]);
         Receipt when is_binary(Receipt) ->
-            reply(204, Req, "mail accepted~n", [])
+            reply(204, Req, "Mail sent successfully: ~s", [Receipt])
     end.
 
 %%------------------------------------------------------------------------------
@@ -214,25 +215,21 @@ normalize_attachments(Files) ->
 normalize_attachments([], Acc) ->
     lists:reverse(Acc);
 normalize_attachments([{Filename, ContentType, <<>>} | Rest], Acc) ->
-    error_logger:info_msg("File ~s of type ~s is empty~n",
-                          [Filename, ContentType]),
+    log("File ~s of type ~s is empty~n", [Filename, ContentType]),
     normalize_attachments(Rest, Acc);
 normalize_attachments([{Filename, ContentType, Data} | Rest], Acc) ->
     case binary:split(ContentType, <<"/">>, [trim]) of
         [<<"application">>, <<"octet-stream">>] ->
             {Type, SubType} = guess_content_type(Filename),
-            error_logger:info_msg("Including file ~s of type ~s/~s~n",
-                                  [Filename, Type, SubType]),
+            log("Including file ~s of type ~s/~s~n", [Filename, Type, SubType]),
             normalize_attachments(
               Rest, [to_attachment(Type, SubType, Filename, Data) | Acc]);
         [Type, SubType] when Type =/= <<>>, SubType =/= <<>> ->
-            error_logger:info_msg("Including file ~s of type ~s~n",
-                                  [Filename, ContentType]),
+            log("Including file ~s of type ~s~n", [Filename, ContentType]),
             normalize_attachments(
               Rest, [to_attachment(Type, SubType, Filename, Data) | Acc]);
         _ ->
-            error_logger:info_msg("Ignoring file ~s of type ~s~n",
-                                  [Filename, ContentType]),
+            log("Ignoring file ~s of type ~s~n", [Filename, ContentType]),
             normalize_attachments(Rest, Acc)
     end.
 
@@ -273,9 +270,14 @@ to_cc(#state{cc = CC}) -> [{<<"Cc">>, CC}].
 %% @private
 %%------------------------------------------------------------------------------
 reply(StatusCode, Req, Fmt, Args) ->
-    error_logger:info_msg(Fmt, Args),
+    log(Fmt, Args),
     {ok, NewReq} = cowboy_req:reply(StatusCode, Req),
     NewReq.
+
+%%------------------------------------------------------------------------------
+%% @private
+%%------------------------------------------------------------------------------
+log(Fmt, Args) -> error_logger:info_msg("~w: " ++ Fmt, [self() | Args]).
 
 %%------------------------------------------------------------------------------
 %% @private

@@ -4,5 +4,7 @@
  {<<"erlang_localtime">>,{pkg,<<"erlang_localtime">>,<<"1.0.0">>},1},
  {<<"erlware_commons">>,{pkg,<<"erlware_commons">>,<<"0.20.0">>},1},
  {<<"gen_smtp">>,{pkg,<<"gen_smtp">>,<<"0.11.0">>},0},
+ {<<"goldrush">>,{pkg,<<"goldrush">>,<<"0.1.9">>},1},
+ {<<"lager">>,{pkg,<<"lager">>,<<"3.2.4">>},0},
  {<<"qdate">>,{pkg,<<"qdate">>,<<"0.4.3">>},0},
  {<<"ranch">>,{pkg,<<"ranch">>,<<"1.2.1">>},1}].
