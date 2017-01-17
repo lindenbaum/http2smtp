@@ -20,8 +20,7 @@
 
 .DEFAULT_GOAL := all
 
-REBAR3 := $(shell which rebar3 2> /dev/null)
-REBAR3 ?= ./rebar3-3.3.4
+REBAR3 := ./rebar3
 
 VERSION := $(shell cat rebar.config | grep http2smtp | head -1 | cut -d\" -f 2)
 
