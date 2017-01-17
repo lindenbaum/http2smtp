@@ -3,7 +3,7 @@
 ##               |  o __   _|  _  __  |_   _       _ _   (TM)
 ##               |_ | | | (_| (/_ | | |_) (_| |_| | | |
 ##
-## Copyright (c) 2016 Lindenbaum GmbH
+## Copyright (c) 2017 Lindenbaum GmbH
 ##
 ## Permission to use, copy, modify, and/or distribute this software for any
 ## purpose with or without fee is hereby granted, provided that the above
