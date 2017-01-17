@@ -89,7 +89,7 @@ init({tcp, _}, Req, Opts) ->
         context = Context,
         from = proplists:get_value(from, Opts, ?FROM),
         rate_limit = proplists:get_value(rate_limit, Opts, ?RATE_LIMIT),
-        smtp_opts = [_ | _] = filter(Opts, [relay, username, password]),
+        smtp_opts = [_ | _] = proplists:get_value(smtp_opts, Opts),
         subject = proplists:get_value(subject, Opts, ?SUBJECT),
         timezone = proplists:get_value(timezone, Opts, ?TIMEZONE),
         to = To}}.
@@ -325,9 +325,3 @@ get_value(Key, L1, L2, Default) ->
 %%------------------------------------------------------------------------------
 exclude(Proplist, Keys) ->
     [E || E = {K, _} <- Proplist, not lists:member(K, Keys)].
-
-%%------------------------------------------------------------------------------
-%% @private
-%% Filter a proplist for certain keys.
-%%------------------------------------------------------------------------------
-filter(Proplist, Keys) -> [E || E = {K, _} <- Proplist, lists:member(K, Keys)].
