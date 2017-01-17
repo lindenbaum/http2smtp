@@ -9,12 +9,15 @@ attachment the multipart variant allows an unlimited number of attachments.
 Configuration
 -------------
 
-The _http2smtp_ project allows a lot of customization. We'll only list the most
-important things here. For further customisation you'll need to read the source.
+The _http2smtp_ project allows a lot of customization. The RPM distribution
+expects the configuration in `/etc/http2smtp.config`. The format of the file is
+Erlang's [sys.config](http://erlang.org/doc/man/config.html) style. The
+following options can/must be applied.
 
 * `{host_match, Match :: string() | binary() | '_'}`
 
-  Configures `cowboy`'s host match. Default is _'_'_.
+  Configures [cowboy](https://github.com/ninenines/cowboy/)'s host match.
+  Default is '_'.
 
 * `{host_port, pos_integer()}`
 
@@ -29,7 +32,7 @@ important things here. For further customisation you'll need to read the source.
 * `{from, binary()}`
 
   Default `From` address value, used if not part of the POST. Default is
-  _http2smtp@hostname_.
+  _http2smtp@ ++ inet:gethostname()_.
 
 * `{subject, binary()}`
 
@@ -37,16 +40,20 @@ important things here. For further customisation you'll need to read the source.
 
 * `{timezone, string() | auto}`
 
-  Default timezone to use for the SMTP `Date` field. Default is _auto_.
+  Default timezone to use for the SMTP `Date` field. Default is _auto_. For more
+  information refer to the [qdate](https://github.com/choptastic/qdate) project.
 
-* `{body_opts, Opts :: proplists:proplist()}`
+* `{body_opts, [cowboy_req:body_opt()]}`
 
-  Options passed to `cowboy`'s body read functions. Defaults to `length` and
-  `read_length` set to 8MiB.
+  Options passed to [cowboy](https://github.com/ninenines/cowboy/)'s body read
+  functions. Defaults to `length` and `read_length` set to 8MiB.
 
-Additionally, you'll need the mandatory SMTP options (e.g. `relay`) that will be
-passed to the `gen_smtp`'s client send function. These can be directly (plain)
-embedded into the application environment of _http2smtp_.
+* `{smtp_opts, [proplists:proplist()]}`
+
+  Options passed to [gen_smtp](https://github.com/Vagabond/gen_smtp)'s
+  `gen_smtp_client:send/2` function. There is no default for this configuration
+  which will result in a crash of the main HTTP handler. This list *must* at
+  least contain the `relay` option.
 
 The values for the `To` and `Cc` SMTP headers may be set per context or globally.
 E.g. if you have special mail destinations for the context `/custom` you could
@@ -63,27 +70,38 @@ configure the application like to following:
     ]},
    {to, <<"default@example.org">>},
    {cc, [<<"default-cc@example.org">>]},
-   {relay, "smtp.example.org"},
+   {smtp_opts,
+    [
+     {relay, "smtp.example.org"}
+    ]},
    ...
   ]}
 ]
 ```
 
-Deployment
-----------
+This would relay requests POSTed to `/custom` to the address `custom@example.org`
+while requests POSTed to all other contexts would be relayed to
+`default@example.org` (with the appropriate Cc).
 
-This project is easiest to deploy when packaged as an RPM package. To package
-the project simply call `make rpm` (you'll need
-[fpm](https://github.com/jordansissel/fpm) for this to work). Please notice that
-_http2smtp_ assumes [systemd](https://www.freedesktop.org/wiki/Software/systemd/)
-to run the target distribution.
+Build
+-----
 
-The configuration for the service is located at `/etc/http2smtp.config` which
-default to a miformated file on purpose. The service should not be able to start
-until you configured it properly.
+The project is built using [rebar3](http://rebar3.org/). You'll need to have
+[Erlang](http://erlang.org/) installed on the build machine. If you want to
+build the RPM package you'll also need [fpm](https://github.com/jordansissel/fpm).
 
-Examples
---------
+Just issue `make release`. The resulting package is self-sufficient and has no
+special dependencies (the Erlang runtime will be included).
+
+Please note that the RPM assumes that
+[systemd](https://www.freedesktop.org/wiki/Software/systemd/) is used on the
+target distribution. The configuration for the service is located at
+`/etc/http2smtp.config`. It is malformed by default which is intended because
+the application will not work without custom configuration. The minimal
+configuration consists of an SMTP relay and a default _To_ address.
+
+Client Examples
+---------------
 
 The following shows some client-side examples using [cURL](https://curl.haxx.se/):
 

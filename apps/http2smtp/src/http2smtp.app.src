@@ -38,6 +38,6 @@
     cowlib,
     cowboy
    ]},
-  {env,[]},
+  {env, []},
   {modules, []}
  ]}.
