@@ -53,6 +53,7 @@ rpm: all _build/http2smtp.service
             --description "A HTTP-based mail relay service" \
             --url http://lindenbaum.eu \
             config/http2smtp.config=/etc/ \
+            config/http2smtp.sh=/etc/profile.d/ \
             _build/http2smtp.service=/usr/lib/systemd/system/ \
             $(REL_DIR)=/usr/lib64
 

@@ -100,6 +100,11 @@ target distribution. The configuration for the service is located at
 the application will not work without custom configuration. The minimal
 configuration consists of an SMTP relay and a default _To_ address.
 
+As for any decent Erlang application it is possible to connect to the runtime
+dynamically using the Erlang remote shell. The RPM installs a handy alias into
+`/etc/profile.d` which circumvents typing the necessary boilerplate. All you
+need to type is `remsh_http2smtp`.
+
 Client Examples
 ---------------
 
