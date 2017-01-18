@@ -128,9 +128,9 @@ attachment will not be forwarded via SMTP.
   Fields:
   * from: The sender of email address.
   * subject: The email's subject line.
-  * body: The email body (will be relayed as text/plain)
+  * body: The email body (will be relayed with content type `text/plain`)
   * filename: The filename of the attachment
-  * data: The content of the attachment
+  * data: The content of the attachment (must be URL-encoded)
 
 * POST with `multipart/form-data`
 
@@ -140,7 +140,7 @@ attachment will not be forwarded via SMTP.
   Fields:
   * from: The sender of email address.
   * subject: The email's subject line.
-  * body: The email body (will be relayed as text/plain)
+  * body: The email body (will be relayed with content type `text/plain`)
   * any additional file uploads will be converted to attachments
 
 Client Examples
