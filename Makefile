@@ -44,6 +44,7 @@ tar: all
 
 .PHONY: rpm
 rpm: all _build/dist.txt _build/http2smtp.service
+	$(RM) http2smtp-*.rpm
 	$(RM) -r $(REL_DIR)/bin/
 	$(RM) $(REL_DIR)/releases/$(VERSION)/vm.args
 	fpm -s dir -t rpm \
@@ -76,5 +77,6 @@ _build/dist.txt:
 _build/http2smtp.service: config/http2smtp.service.template
 	cat $< \
           | sed "s|%VSN%|$(VERSION)|g" \
+          | sed "s|%COOKIE%|$(shell echo $$RANDOM$$RANDOM)|g" \
           | sed "s|%ERTS%|$(shell ls $(REL_DIR) | grep erts | cut -d- -f2)|g" \
           > $@
