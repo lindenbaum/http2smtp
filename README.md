@@ -1,10 +1,19 @@
 http2smtp
 =========
 
-A simple service that allows mail delivery of HTTP POSTed content. The allowed
-content types are either `application/x-www-form-urlencoded` or
+A simple service that allows mail delivery via HTTP POST (REST-like). The
+allowed content types are either `application/x-www-form-urlencoded` or
 `multipart/form-data`. While URL-encoded uploads can only handle one file
 attachment the multipart variant allows an unlimited number of attachments.
+
+Features
+--------
+
+* Small, robust Erlang-based service
+* Inspectable at runtime using the Erlang remote shell
+* Server-side request rate limiting per context
+* Simple HTTP API with support for the content types
+  `application/x-www-form-urlencoded` and `multipart/form-data`
 
 Configuration
 -------------
@@ -105,6 +114,35 @@ dynamically using the Erlang remote shell. The RPM installs a handy alias into
 `/etc/profile.d` which circumvents typing the necessary boilerplate. All you
 need to type is `remsh_http2smtp`.
 
+HTTP API
+--------
+
+All fields are optional. However, a request without either a custom `body` or an
+attachment will not be forwarded via SMTP.
+
+* POST with `application/x-www-form-urlencoded`
+
+  The content type of the attachment (if any) will be guessed automatically
+  based on its filename.
+
+  Fields:
+  * from: The sender of email address.
+  * subject: The email's subject line.
+  * body: The email body (will be relayed as text/plain)
+  * filename: The filename of the attachment
+  * data: The content of the attachment
+
+* POST with `multipart/form-data`
+
+  If the content type of an attachment is `application/octet-stream` the server
+  will try to guess the content type based on the filename.
+
+  Fields:
+  * from: The sender of email address.
+  * subject: The email's subject line.
+  * body: The email body (will be relayed as text/plain)
+  * any additional file uploads will be converted to attachments
+
 Client Examples
 ---------------
 
@@ -113,11 +151,11 @@ The following shows some client-side examples using [cURL](https://curl.haxx.se/
 * Send mail with one attachment using content type `application/x-www-form-urlencoded`
 
 ```bash
-curl -d from="http2smtp@example.org" -d subject="Test" -d body="Body" -d filename="filename.png" --data-urlencode data@filename.png http://localhost:8080/context
+curl -d subject="Test" -d body="Body" -d filename="filename.png" --data-urlencode data@filename.png http://localhost:8080/context
 ```
 
 * Send mail with two attachments using content type `multipart/form-data`
 
 ```bash
-curl -F from="http2smtp@example.org" -F subject="Test" -F body="Body" -F file1=@filename.png -F file2=@filename.txt http://localhost:8080/context
+curl -F subject="Test" -F body="Body" -F file1=@filename.png -F file2=@filename.txt http://localhost:8080/context
 ```
