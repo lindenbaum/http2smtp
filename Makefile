@@ -29,8 +29,6 @@ REL_DIR := _build/default/rel/http2smtp
 .PHONY: all
 all:
 	$(REBAR3) do dialyzer,eunit,release
-	$(RM) -r $(REL_DIR)/bin/
-	$(RM) $(REL_DIR)/releases/$(VERSION)/vm.args
 
 .PHONY: test
 test:
@@ -40,8 +38,14 @@ test:
 compile:
 	$(REBAR3) compile
 
+.PHONY: tar
+tar: all
+	tar -czf http2smtp-$(VERSION).tar.gz -C $(dir $(REL_DIR)) http2smtp
+
 .PHONY: rpm
-rpm: all _build/http2smtp.service
+rpm: all _build/dist.txt _build/http2smtp.service
+	$(RM) -r $(REL_DIR)/bin/
+	$(RM) $(REL_DIR)/releases/$(VERSION)/vm.args
 	fpm -s dir -t rpm \
             --name http2smtp \
             --version $(VERSION) --iteration 1 \
@@ -51,6 +55,7 @@ rpm: all _build/http2smtp.service
             --maintainer voiceteam@lindenbaum.eu \
             --description "A HTTP-based mail relay service" \
             --url http://lindenbaum.eu \
+            --rpm-dist $(shell cat _build/dist.txt) \
             config/http2smtp.config=/etc/ \
             config/http2smtp.sh=/etc/profile.d/ \
             _build/http2smtp.service=/usr/lib/systemd/system/ \
@@ -64,6 +69,9 @@ clean:
 .PHONY: distclean
 distclean: clean
 	$(RM) -r _build/
+
+_build/dist.txt:
+	rpmbuild --showrc | grep 'dist\s' | sed 's|.*dist.*\.\(.*\)|\1|' > $@
 
 _build/http2smtp.service: config/http2smtp.service.template
 	cat $< \
