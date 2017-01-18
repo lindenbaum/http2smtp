@@ -71,7 +71,7 @@ distclean: clean
 	$(RM) -r _build/
 
 _build/dist.txt:
-	rpmbuild --showrc | grep 'dist\s' | sed 's|.*dist.*\.\(.*\)|\1|' > $@
+	rpmbuild --showrc | grep 'dist\s' | sed 's|.*dist\s*\.\(.*\)|\1|' > $@
 
 _build/http2smtp.service: config/http2smtp.service.template
 	cat $< \
