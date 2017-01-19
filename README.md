@@ -112,7 +112,14 @@ configuration consists of an SMTP relay and a default _To_ address.
 As for any decent Erlang application it is possible to connect to the runtime
 dynamically using the Erlang remote shell. The RPM installs a handy alias into
 `/etc/profile.d` which circumvents typing the necessary boilerplate. All you
-need to type is `remsh_http2smtp`.
+need to type is `remsh_http2smtp`. To customize the used cookie just place a
+Systemd override in `/etc/systemd/system/http2smtp.service.d/` with a content
+similar to
+
+```
+[Service]
+Environment=COOKIE=my_custom_cookie
+```
 
 HTTP API
 --------
