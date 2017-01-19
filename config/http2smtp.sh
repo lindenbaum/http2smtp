@@ -18,4 +18,4 @@
 ## OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 ##==============================================================================
 
-alias remsh_http2smtp='/usr/lib64/http2smtp/erts-*/bin/erl -name $USER-$RANDOM -setcookie $(systemctl cat http2smtp.service | grep COOKIE | tail -1 | cut -d '=' -f 3) -remsh http2smtp@$(hostname -f) -hidden'
+alias remsh_http2smtp='/usr/lib64/http2smtp/erts-*/bin/erl -name $USER-$RANDOM -setcookie $(systemctl cat http2smtp.service | grep =COOKIE | tail -1 | cut -d '=' -f 3) -remsh http2smtp@$(hostname -f) -hidden'
