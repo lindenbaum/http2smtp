@@ -97,10 +97,11 @@ init({tcp, _}, Req, Opts) ->
 %%------------------------------------------------------------------------------
 %% @private
 %%------------------------------------------------------------------------------
-handle(Req, State = #state{context = Context, rate_limit = Limit}) ->
-    {ok, case http2smtp_rate:exceeds(Context, Limit) of
-             false -> handle_request(Req, State);
-             true  -> reply(429, Req, "Rate limit exceeded on /~s~n", [Context])
+handle(Req, State) ->
+    {Method, NewReq} = cowboy_req:method(Req),
+    {ok, case Method of
+             <<"POST">> -> handle_request(NewReq, State);
+             M          -> reply(405, NewReq, "Invalid method ~s~n", [M])
          end, State}.
 
 %%------------------------------------------------------------------------------
@@ -115,10 +116,10 @@ terminate(_Reason, _Req, #state{}) -> ok.
 %%------------------------------------------------------------------------------
 %% @private
 %%------------------------------------------------------------------------------
-handle_request(Req, State) ->
-    case cowboy_req:method(Req) of
-        {<<"POST">>, NewReq} -> handle_post(NewReq, State);
-        {M, NewReq}          -> reply(405, NewReq, "Invalid method ~s~n", [M])
+handle_request(Req, State = #state{context = Context, rate_limit = Limit}) ->
+    case http2smtp_rate:exceeds(Context, Limit) of
+        false -> handle_post(Req, State);
+        true  -> reply(429, Req, "Rate limit exceeded on /~s~n", [Context])
     end.
 
 %%------------------------------------------------------------------------------
