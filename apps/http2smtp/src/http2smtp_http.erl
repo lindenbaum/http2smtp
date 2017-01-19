@@ -100,7 +100,7 @@ init({tcp, _}, Req, Opts) ->
 handle(Req, State) ->
     {Method, NewReq} = cowboy_req:method(Req),
     {ok, case Method of
-             <<"POST">> -> handle_request(NewReq, State);
+             <<"POST">> -> handle_post(NewReq, State);
              M          -> reply(405, NewReq, "Invalid method ~s~n", [M])
          end, State}.
 
@@ -112,15 +112,6 @@ terminate(_Reason, _Req, #state{}) -> ok.
 %%%=============================================================================
 %%% internal functions
 %%%=============================================================================
-
-%%------------------------------------------------------------------------------
-%% @private
-%%------------------------------------------------------------------------------
-handle_request(Req, State = #state{context = Context, rate_limit = Limit}) ->
-    case http2smtp_rate:exceeds(Context, Limit) of
-        false -> handle_post(Req, State);
-        true  -> reply(429, Req, "Rate limit exceeded on /~s~n", [Context])
-    end.
 
 %%------------------------------------------------------------------------------
 %% @private
@@ -147,7 +138,7 @@ handle_urlencoded(Req, State = #state{body_opts = Opts}) ->
     ContentType = <<"application/octet-stream">>,
     Data = proplists:get_value(<<"data">>, Query, <<>>),
     Attachments = normalize_attachments([{Filename, ContentType, Data}]),
-    send(From, Subject, Body, Attachments, NewReq, State).
+    handle_mail(From, Subject, Body, Attachments, NewReq, State).
 
 %%------------------------------------------------------------------------------
 %% @private
@@ -177,15 +168,15 @@ handle_multipart(Req, {From, Subject, Body, Files}, State) ->
             handle_multipart(NextReq, Acc, State);
         {done, NewReq} ->
             Attachments = normalize_attachments(lists:reverse(Files)),
-            send(From, Subject, to_body(Body), Attachments, NewReq, State)
+            handle_mail(From, Subject, to_body(Body), Attachments, NewReq, State)
     end.
 
 %%------------------------------------------------------------------------------
 %% @private
 %%------------------------------------------------------------------------------
-send(_From, ?SUBJECT, [], [], Req, _State) ->
+handle_mail(_From, ?SUBJECT, [], [], Req, _State) ->
     reply(400, Req, "Refusing request without body or attachments", []);
-send(From, Subject, Body, Attachments, Req, State) ->
+handle_mail(From, Subject, Body, Attachments, Req, State) ->
     Hdrs = [
             {<<"From">>, From},
             {<<"To">>, State#state.to},
@@ -197,9 +188,22 @@ send(From, Subject, Body, Attachments, Req, State) ->
            ] ++ to_cc(State),
     Att = [{<<"multipart">>, <<"alternative">>, [], [], Body} | Attachments],
     Mail = mimemail:encode({<<"multipart">>, <<"mixed">>, Hdrs, [], Att}, []),
-    case gen_smtp_client:send_blocking(
-           {From, [State#state.to], Mail},
-           State#state.smtp_opts) of
+    maybe_relay(From, Mail, Req, State).
+
+%%------------------------------------------------------------------------------
+%% @private
+%%------------------------------------------------------------------------------
+maybe_relay(From, Mail, Req, State = #state{context = Context}) ->
+    case http2smtp_rate:exceeds(Context, State#state.rate_limit) of
+        false -> relay(From, Mail, Req, State);
+        true  -> reply(429, Req, "Rate limit exceeded on /~s~n", [Context])
+    end.
+
+%%------------------------------------------------------------------------------
+%% @private
+%%------------------------------------------------------------------------------
+relay(From, Mail, Req, #state{to = To, smtp_opts = SmtpOpts}) ->
+    case gen_smtp_client:send_blocking({From, [To], Mail}, SmtpOpts) of
         {error, Reason} ->
             reply(500, Req, "Failed to send mail: ~p~n", [Reason]);
         {error, Reason, Failure} ->
