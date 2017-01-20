@@ -113,13 +113,19 @@ As for any decent Erlang application it is possible to connect to the runtime
 dynamically using the Erlang remote shell. The RPM installs a handy alias into
 `/etc/profile.d` which circumvents typing the necessary boilerplate. All you
 need to type is `remsh_http2smtp`. To customize the used cookie just place a
-Systemd override in `/etc/systemd/system/http2smtp.service.d/` with a content
+systemd override in `/etc/systemd/system/http2smtp.service.d/` with a content
 similar to
 
 ```
 [Service]
 Environment=COOKIE=my_custom_cookie
 ```
+
+Logging can either be done using `stdout` with
+[lager](https://github.com/erlang-lager/lager) or using remote
+[Syslog](https://github.com/schlagert/syslog). When running under systemd,
+logging to `stdout` by default be captured by journald which is why this method
+is the default.
 
 HTTP API
 --------
