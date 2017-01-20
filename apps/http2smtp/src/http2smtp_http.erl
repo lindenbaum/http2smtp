@@ -97,11 +97,15 @@ init({tcp, _}, Req, Opts) ->
 %%------------------------------------------------------------------------------
 %% @private
 %%------------------------------------------------------------------------------
-handle(Req, State) ->
+handle(Req, State = #state{context = Context}) ->
     {Method, NewReq} = cowboy_req:method(Req),
     {ok, case Method of
-             <<"POST">> -> handle_post(NewReq, State);
-             M          -> reply(405, NewReq, "Invalid method ~s~n", [M])
+             <<"GET">> when Context =:= <<"status">> ->
+                 reply_status(NewReq);
+             <<"POST">> ->
+                 handle_post(NewReq, State);
+             Method ->
+                 reply(405, NewReq, "Invalid method ~s~n", [Method])
          end, State}.
 
 %%------------------------------------------------------------------------------
@@ -276,7 +280,17 @@ to_cc(#state{cc = CC}) -> [{<<"Cc">>, CC}].
 %%------------------------------------------------------------------------------
 reply(StatusCode, Req, Fmt, Args) ->
     log(Fmt, Args),
+    ok = http2smtp_stats:record(StatusCode),
     {ok, NewReq} = cowboy_req:reply(StatusCode, Req),
+    NewReq.
+
+%%------------------------------------------------------------------------------
+%% @private
+%%------------------------------------------------------------------------------
+reply_status(Req) ->
+    Hdrs = [{<<"content-type">>, <<"text/plain">>}],
+    Text = iolist_to_binary(http2smtp_stats:to_string()),
+    {ok, NewReq} = cowboy_req:reply(200, Hdrs, Text, Req),
     NewReq.
 
 %%------------------------------------------------------------------------------

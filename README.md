@@ -156,6 +156,11 @@ attachment will not be forwarded via SMTP.
   * body: The email body (will be relayed with content type `text/plain`)
   * any additional file uploads will be converted to attachments
 
+* GET on /status
+
+  Returns a response of content type `text/plain` containing some server
+  statistics.
+
 Client Examples
 ---------------
 

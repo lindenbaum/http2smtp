@@ -32,6 +32,9 @@
 -behaviour(application).
 -behaviour(supervisor).
 
+%% API
+-export([info/0]).
+
 %% Application callbacks
 -export([start/2, stop/1]).
 
@@ -40,6 +43,22 @@
 
 -define(PORT, 8080).
 -define(HOST_MATCH, '_').
+
+%%%=============================================================================
+%%% API
+%%%=============================================================================
+
+%%------------------------------------------------------------------------------
+%% @doc
+%% Print server information to the console.
+%% @end
+%%------------------------------------------------------------------------------
+-spec info() -> ok.
+info() ->
+    io:format("Server Statistics~n"
+              "-----------------~n"
+              "~s~n",
+              [http2smtp_stats:to_string()]).
 
 %%%=============================================================================
 %%% Application callbacks
@@ -70,7 +89,8 @@ init([]) ->
     error_logger:info_msg("Listening on HTTP port ~w~n", [Port]),
     ProtoOpts = [{compress, true}, {env, Env}],
     {ok, _} = cowboy:start_http(http, Acceptors, [{port, Port}], ProtoOpts),
-    {ok, {{one_for_one, 5, 1}, [worker(http2smtp_rate, [])]}}.
+    ChildSpecs = [worker(http2smtp_rate, []), worker(http2smtp_stats, [])],
+    {ok, {{one_for_one, 5, 1}, ChildSpecs}}.
 
 %%%=============================================================================
 %%% internal functions

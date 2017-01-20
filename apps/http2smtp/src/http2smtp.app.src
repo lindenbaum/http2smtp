@@ -25,7 +25,8 @@
   {vsn, "1.0.0"},
   {registered,
    [
-    http2smtp_rate
+    http2smtp_rate,
+    http2smtp_stats
    ]},
   {mod, {http2smtp, []}},
   {applications,
