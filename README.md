@@ -64,6 +64,11 @@ following options can/must be applied.
   which will result in a crash of the main HTTP handler. This list *must* at
   least contain the `relay` option.
 
+* `{allowed_content_types, [binary()]}`
+
+  A list of allowed content types for file attachments. The empty list (which
+  is the default) means every content type is allowed.
+
 The values for the `To` and `Cc` SMTP headers may be set per context or globally.
 E.g. if you have special mail destinations for the context `/custom` you could
 configure the application like to following:

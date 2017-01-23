@@ -55,7 +55,7 @@
 path_matches() ->
     Env = application:get_all_env(http2smtp),
     Opts = exclude(Env, [included_applications]),
-    RateLimit = proplists:get_value(rate_limit, Opts, ?RATE_LIMIT),
+    RateLimit = get_value(rate_limit, Opts, ?RATE_LIMIT),
     {[{"/[:context]", ?MODULE, Opts}], RateLimit}.
 
 %%%=============================================================================
@@ -63,6 +63,7 @@ path_matches() ->
 %%%=============================================================================
 
 -record(state, {
+          allowed    :: [binary()],
           body_opts  :: proplists:proplist(),
           cc         :: [binary()],
           context    :: binary(),
@@ -84,14 +85,15 @@ init({tcp, _}, Req, Opts) ->
     {To, CC} = get_to_and_cc(Context, Opts),
     {ok, NextReq,
      #state{
-        body_opts = proplists:get_value(body_opts, Opts, ?BODY_OPTS),
+        allowed = to_binlist(get_value(allowed_content_types, Opts, [])),
+        body_opts = get_value(body_opts, Opts, ?BODY_OPTS),
         cc = CC,
         context = Context,
-        from = proplists:get_value(from, Opts, ?FROM),
-        rate_limit = proplists:get_value(rate_limit, Opts, ?RATE_LIMIT),
-        smtp_opts = [_ | _] = proplists:get_value(smtp_opts, Opts),
-        subject = proplists:get_value(subject, Opts, ?SUBJECT),
-        timezone = proplists:get_value(timezone, Opts, ?TIMEZONE),
+        from = to_bin(get_value(from, Opts, ?FROM)),
+        rate_limit = get_value(rate_limit, Opts, ?RATE_LIMIT),
+        smtp_opts = [_ | _] = get_value(smtp_opts, Opts, undefined),
+        subject = to_bin(get_value(subject, Opts, ?SUBJECT)),
+        timezone = get_value(timezone, Opts, ?TIMEZONE),
         to = To}}.
 
 %%------------------------------------------------------------------------------
@@ -133,15 +135,16 @@ handle_post(Req, State) ->
 %%------------------------------------------------------------------------------
 %% @private
 %%------------------------------------------------------------------------------
-handle_urlencoded(Req, State = #state{body_opts = Opts}) ->
+handle_urlencoded(Req, State = #state{allowed = Allowed, body_opts = Opts}) ->
     {ok, Query, NewReq} = cowboy_req:body_qs(Req, Opts),
-    From = proplists:get_value(<<"from">>, Query, State#state.from),
-    Subject = proplists:get_value(<<"subject">>, Query, State#state.subject),
-    Body = to_body(proplists:get_value(<<"body">>, Query)),
-    Filename = proplists:get_value(<<"filename">>, Query, <<"untitled">>),
+    From = get_value(<<"from">>, Query, State#state.from),
+    Subject = get_value(<<"subject">>, Query, State#state.subject),
+    Body = to_body(get_value(<<"body">>, Query, undefined)),
+    Filename = get_value(<<"filename">>, Query, <<"untitled">>),
     ContentType = <<"application/octet-stream">>,
-    Data = proplists:get_value(<<"data">>, Query, <<>>),
-    Attachments = normalize_attachments([{Filename, ContentType, Data}]),
+    Data = get_value(<<"data">>, Query, <<>>),
+    Files = [{filename:basename(Filename), ContentType, Data}],
+    Attachments = normalize_attachments(Allowed, Files),
     handle_mail(From, Subject, Body, Attachments, NewReq, State).
 
 %%------------------------------------------------------------------------------
@@ -157,7 +160,8 @@ handle_multipart(Req, {From, Subject, Body, Files}, State) ->
             {ok, Data, NextReq} = cowboy_req:part_body(NewReq, Opts),
             Acc = case FormData of
                       {file, _, Filename, ContentType, _} ->
-                          File = {Filename, ContentType, Data},
+                          FName = filename:basename(Filename),
+                          File = {FName, ContentType, Data},
                           {From, Subject, Body, [File | Files]};
                       {data, <<"from">>} ->
                           {Data, Subject, Body, Files};
@@ -166,12 +170,13 @@ handle_multipart(Req, {From, Subject, Body, Files}, State) ->
                       {data, <<"body">>} ->
                           {From, Subject, Data, Files};
                       {data, Field} ->
-                          log("Ignoring field ~s with data ~p~n", [Field, Data]),
+                          log("Ignoring field ~s~n", [Field]),
                           {From, Subject, Body, Files}
                   end,
             handle_multipart(NextReq, Acc, State);
         {done, NewReq} ->
-            Attachments = normalize_attachments(lists:reverse(Files)),
+            Allowed = State#state.allowed,
+            Attachments = normalize_attachments(Allowed, lists:reverse(Files)),
             handle_mail(From, Subject, to_body(Body), Attachments, NewReq, State)
     end.
 
@@ -219,39 +224,59 @@ relay(From, Mail, Req, #state{to = To, smtp_opts = SmtpOpts}) ->
 %%------------------------------------------------------------------------------
 %% @private
 %%------------------------------------------------------------------------------
-normalize_attachments(Files) ->
-    normalize_attachments(Files, []).
-normalize_attachments([], Acc) ->
-    lists:reverse(Acc);
-normalize_attachments([{Filename, ContentType, <<>>} | Rest], Acc) ->
-    log("File ~s of type ~s is empty~n", [Filename, ContentType]),
-    normalize_attachments(Rest, Acc);
-normalize_attachments([{Filename, ContentType, Data} | Rest], Acc) ->
+normalize_attachments(Allowed, Files) ->
+    normalize_attachments(Allowed, Files, []).
+normalize_attachments(_Allowed, [], Acc) ->
+    lists:reverse(lists:flatten(Acc));
+normalize_attachments(Allowed, [{Filename, ContentType, <<>>} | Rest], Acc) ->
+    log("Skipping empty file ~s of type ~s~n", [Filename, ContentType]),
+    normalize_attachments(Allowed, Rest, Acc);
+normalize_attachments(Allowed, [{Filename, ContentType, Data} | Rest], Acc) ->
     case binary:split(ContentType, <<"/">>, [trim]) of
         [<<"application">>, <<"octet-stream">>] ->
             {Type, SubType} = guess_content_type(Filename),
-            log("Including file ~s of type ~s/~s~n", [Filename, Type, SubType]),
             normalize_attachments(
-              Rest, [to_attachment(Type, SubType, Filename, Data) | Acc]);
+              Allowed,
+              Rest,
+              [to_attachment(Allowed, Type, SubType, Filename, Data) | Acc]);
         [Type, SubType] when Type =/= <<>>, SubType =/= <<>> ->
-            log("Including file ~s of type ~s~n", [Filename, ContentType]),
             normalize_attachments(
-              Rest, [to_attachment(Type, SubType, Filename, Data) | Acc]);
+              Allowed,
+              Rest,
+              [to_attachment(Allowed, Type, SubType, Filename, Data) | Acc]);
         _ ->
-            log("Ignoring file ~s of type ~s~n", [Filename, ContentType]),
-            normalize_attachments(Rest, Acc)
+            log("Skipping file ~s of type ~s~n", [Filename, ContentType]),
+            normalize_attachments(Allowed, Rest, Acc)
     end.
 
 %%------------------------------------------------------------------------------
 %% @private
 %%------------------------------------------------------------------------------
-to_attachment(Type, SubType, Filename, Data) ->
-    {Type, SubType, [],
-     [
-      {<<"transfer-encoding">>, <<"base64">>},
-      {<<"disposition">>, <<"attachment">>},
-      {<<"disposition-params">>, [{<<"filename">>, Filename}]}
-     ], Data}.
+to_attachment(Allowed, Type, SubType, Filename, Data) ->
+    case is_allowed(Type, SubType, Allowed) of
+        true ->
+            log("Including file ~s of type ~s/~s~n", [Filename, Type, SubType]),
+            [{Type, SubType, [],
+              [
+               {<<"transfer-encoding">>, <<"base64">>},
+               {<<"disposition">>, <<"attachment">>},
+               {<<"disposition-params">>,
+                [
+                 {<<"filename">>, Filename}
+                ]}
+              ], Data}];
+        false ->
+            log("Skipping file ~s of type ~s/~s~n", [Filename, Type, SubType]),
+            []
+    end.
+
+%%------------------------------------------------------------------------------
+%% @private
+%%------------------------------------------------------------------------------
+is_allowed(_Type, _SubType, []) ->
+    true;
+is_allowed(Type, SubType, Allowed) ->
+    lists:member(<<Type/binary, $/, SubType/binary>>, Allowed).
 
 %%------------------------------------------------------------------------------
 %% @private
@@ -302,10 +327,10 @@ log(Fmt, Args) -> error_logger:info_msg("~w: " ++ Fmt, [self() | Args]).
 %% @private
 %%------------------------------------------------------------------------------
 get_to_and_cc(Context, Opts) ->
-    ContextCfg = proplists:get_value(Context, Opts, []),
-    To = get_value(to, ContextCfg, Opts, undefined),
+    ContextCfg = get_value(Context, Opts, []),
+    To = to_bin(get_value(to, ContextCfg, Opts, undefined)),
     true = is_mail(To),
-    CC = get_value(cc, ContextCfg, Opts, ?CC),
+    CC = to_binlist(get_value(cc, ContextCfg, Opts, ?CC)),
     true = lists:all(fun is_mail/1, CC),
     {To, CC}.
 
@@ -335,8 +360,23 @@ guess_content_type(Filename) ->
 %%------------------------------------------------------------------------------
 %% @private
 %%------------------------------------------------------------------------------
+to_bin(S) -> iolist_to_binary([S]).
+
+%%------------------------------------------------------------------------------
+%% @private
+%%------------------------------------------------------------------------------
+to_binlist(L) -> [to_bin(E) || E <- L].
+
+%%------------------------------------------------------------------------------
+%% @private
+%%------------------------------------------------------------------------------
+get_value(Key, L, Default) -> proplists:get_value(Key, L, Default).
+
+%%------------------------------------------------------------------------------
+%% @private
+%%------------------------------------------------------------------------------
 get_value(Key, L1, L2, Default) ->
-    proplists:get_value(Key, L1, proplists:get_value(Key, L2, Default)).
+    get_value(Key, L1, get_value(Key, L2, Default)).
 
 %%------------------------------------------------------------------------------
 %% @private
