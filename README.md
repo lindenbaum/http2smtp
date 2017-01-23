@@ -28,7 +28,7 @@ following options can/must be applied.
   Configures [cowboy](https://github.com/ninenines/cowboy/)'s host match.
   Default is '_'.
 
-* `{host_port, pos_integer()}`
+* `{http_port, pos_integer()}`
 
   The port the web server listens on. The included systemd service assumes that
   an unprivileged user can open this port. Default is _8080_.
