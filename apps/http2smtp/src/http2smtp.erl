@@ -88,6 +88,7 @@ init([]) ->
     Port = application:get_env(?MODULE, http_port, ?PORT),
     error_logger:info_msg("Listening on HTTP port ~w~n", [Port]),
     ProtoOpts = [{compress, true}, {env, Env}],
+    error_logger:info_msg("Using ~w acceptors~n", [Acceptors]),
     {ok, _} = cowboy:start_http(http, Acceptors, [{port, Port}], ProtoOpts),
     ChildSpecs = [worker(http2smtp_rate, []), worker(http2smtp_stats, [])],
     {ok, {{one_for_one, 5, 1}, ChildSpecs}}.

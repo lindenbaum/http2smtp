@@ -55,7 +55,8 @@
 path_matches() ->
     Env = application:get_all_env(http2smtp),
     Opts = exclude(Env, [included_applications]),
-    RateLimit = get_value(rate_limit, Opts, ?RATE_LIMIT),
+    Limits = get_values(rate_limit, Opts, ?RATE_LIMIT),
+    RateLimit = lists:foldl(fun erlang:'+'/2, 0, Limits),
     {[{"/[:context]", ?MODULE, Opts}], RateLimit}.
 
 %%%=============================================================================
@@ -82,19 +83,19 @@ init({tcp, _}, Req, Opts) ->
     log("Handling request from ~w.~w.~w.~w:~w", tuple_to_list(IP) ++ [Port]),
     {Context, NextReq} = cowboy_req:binding(context, NewReq, <<>>),
     log("Request context is /~s", [Context]),
-    {To, CC} = get_to_and_cc(Context, Opts),
+    ContextOpts = get_value(Context, Opts, []),
     {ok, NextReq,
      #state{
         allowed = to_binlist(get_value(allowed_content_types, Opts, [])),
         body_opts = get_value(body_opts, Opts, ?BODY_OPTS),
-        cc = CC,
+        cc = get_cc(ContextOpts, Opts),
         context = Context,
         from = to_bin(get_value(from, Opts, ?FROM)),
-        rate_limit = get_value(rate_limit, Opts, ?RATE_LIMIT),
+        rate_limit = get_value(rate_limit, ContextOpts, Opts, ?RATE_LIMIT),
         smtp_opts = [_ | _] = get_value(smtp_opts, Opts, undefined),
         subject = to_bin(get_value(subject, Opts, ?SUBJECT)),
         timezone = get_value(timezone, Opts, ?TIMEZONE),
-        to = To}}.
+        to = get_to(ContextOpts, Opts)}}.
 
 %%------------------------------------------------------------------------------
 %% @private
@@ -187,14 +188,14 @@ handle_mail(_From, ?SUBJECT, [], [], Req, _State) ->
     reply(400, Req, "Refusing request without body or attachments", []);
 handle_mail(From, Subject, Body, Attachments, Req, State) ->
     Hdrs = [
-            {<<"From">>, From},
+            {<<"From">>, From}, %% will be verified/encoded by gen_smtp
             {<<"To">>, State#state.to},
-            {<<"Subject">>, Subject},
+            {<<"Subject">>, Subject}, %% will be verified/encoded by gen_smtp
             {<<"Message-ID">>, message_id()},
             {<<"Date">>, datestr(State#state.timezone)},
             {<<"MIME-Version">>, <<"1.0">>},
             {<<"X-Mailer">>, <<"http2smtp">>}
-           ] ++ to_cc(State),
+           ] ++ to_cc(State),  %% will be verified/encoded by gen_smtp
     Att = [{<<"multipart">>, <<"alternative">>, [], [], Body} | Attachments],
     Mail = mimemail:encode({<<"multipart">>, <<"mixed">>, Hdrs, [], Att}, []),
     maybe_relay(From, Mail, Req, State).
@@ -325,17 +326,9 @@ log(Fmt, Args) -> error_logger:info_msg("~w: " ++ Fmt, [self() | Args]).
 
 %%------------------------------------------------------------------------------
 %% @private
-%%------------------------------------------------------------------------------
-get_to_and_cc(Context, Opts) ->
-    ContextCfg = get_value(Context, Opts, []),
-    To = to_bin(get_value(to, ContextCfg, Opts, undefined)),
-    true = is_mail(To),
-    CC = to_binlist(get_value(cc, ContextCfg, Opts, ?CC)),
-    true = lists:all(fun is_mail/1, CC),
-    {To, CC}.
-
-%%------------------------------------------------------------------------------
-%% @private
+%% Checks whether the given input binary looks like an email (roughly), an
+%% exact check is performed by gen_smtp. This check is only for configuration
+%% verification.
 %%------------------------------------------------------------------------------
 is_mail(B) when is_binary(B) -> length([true || <<"@">> <= B]) =:= 1.
 
@@ -359,13 +352,35 @@ guess_content_type(Filename) ->
 
 %%------------------------------------------------------------------------------
 %% @private
+%% Convert an iolist to a binary string.
 %%------------------------------------------------------------------------------
 to_bin(S) -> iolist_to_binary([S]).
 
 %%------------------------------------------------------------------------------
 %% @private
+%% Convert a list of iolists to a list of binary strings.
 %%------------------------------------------------------------------------------
 to_binlist(L) -> [to_bin(E) || E <- L].
+
+%%------------------------------------------------------------------------------
+%% @private
+%% Return the Cc address list either from the given context options or from the
+%% global options. Crashes if not set.
+%%------------------------------------------------------------------------------
+get_cc(ContextOpts, Opts) ->
+    CC = to_binlist(get_value(cc, ContextOpts, Opts, ?CC)),
+    true = lists:all(fun is_mail/1, CC),
+    CC.
+
+%%------------------------------------------------------------------------------
+%% @private
+%% Return the To address either from the given context options or from the
+%% global options. Crashes if not set.
+%%------------------------------------------------------------------------------
+get_to(ContextOpts, Opts) ->
+    To = to_bin(get_value(to, ContextOpts, Opts, undefined)),
+    true = is_mail(To),
+    To.
 
 %%------------------------------------------------------------------------------
 %% @private
@@ -377,6 +392,25 @@ get_value(Key, L, Default) -> proplists:get_value(Key, L, Default).
 %%------------------------------------------------------------------------------
 get_value(Key, L1, L2, Default) ->
     get_value(Key, L1, get_value(Key, L2, Default)).
+
+%%------------------------------------------------------------------------------
+%% @private
+%% Return a list of values for a given key from a deep proplist. If not a single
+%% value is found for the given key, the default value will be returned as
+%% single result list entry.
+%%------------------------------------------------------------------------------
+get_values(Key, L, Default) ->
+    get_values(Key, L, [], Default).
+get_values(_Key, [], [], Default) ->
+    [Default];
+get_values(_Key, [], Acc, _Default) ->
+    lists:reverse(Acc);
+get_values(Key, [{Key, Value} | Rest], Acc, Default) ->
+    get_values(Key, Rest, [Value | Acc], Default);
+get_values(Key, [{_, Value} | Rest], Acc, Default) when is_list(Value) ->
+    get_values(Key, lists:append(Value, Rest), Acc, Default);
+get_values(Key, [_ | Rest], Acc, Default) ->
+    get_values(Key, Rest, Acc, Default).
 
 %%------------------------------------------------------------------------------
 %% @private

@@ -35,8 +35,9 @@ following options can/must be applied.
 
 * `{rate_limit, Limit :: pos_integer()}`
 
-  Rate limit per context per minute. Do not accept more that X `mails/min` on a
-  context. Default is _2 mails/min_.
+  Rate limit per context per minute. Do not accept more than X `mails/min` on a
+  context. Every additional request will be rejected. Default is _2 mails/min_.
+  This can also be set per context. For details see description for `To` below.
 
 * `{from, binary()}`
 
@@ -69,9 +70,9 @@ following options can/must be applied.
   A list of allowed content types for file attachments. The empty list (which
   is the default) means every content type is allowed.
 
-The values for the `To` and `Cc` SMTP headers may be set per context or globally.
-E.g. if you have special mail destinations for the context `/custom` you could
-configure the application like to following:
+The values for the `To` and `Cc` SMTP headers as well as the `rate_limit` may be
+set per context and/or globally. E.g. if you have special mail destinations for
+the context `/custom` you could configure the application like to following:
 
 ```erlang
 [
@@ -80,10 +81,12 @@ configure the application like to following:
    {<<"custom">>,
     [
      {to, <<"custom@example.org">>},
-     {cc, []}
+     {cc, []},
+     {rate_limit, 1}
     ]},
    {to, <<"default@example.org">>},
    {cc, [<<"default-cc@example.org">>]},
+   {rate_limit, 10},
    {smtp_opts,
     [
      {relay, "smtp.example.org"}
@@ -94,8 +97,9 @@ configure the application like to following:
 ```
 
 This would relay requests POSTed to `/custom` to the address `custom@example.org`
-while requests POSTed to all other contexts would be relayed to
-`default@example.org` (with the appropriate Cc).
+with a rate limit of 1 mail per second while requests POSTed to all other
+contexts would be relayed to `default@example.org` (with the appropriate Cc)
+and with a rate limit of 10 mails per second (combined).
 
 Build
 -----
