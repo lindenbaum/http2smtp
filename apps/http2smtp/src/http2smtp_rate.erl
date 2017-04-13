@@ -69,7 +69,7 @@ start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 %%%=============================================================================
 
 -record(state, {
-          timer       :: reference(),
+          timer       :: reference() | undefined,
           counts = [] :: [{term(), non_neg_integer()}]}).
 
 %%------------------------------------------------------------------------------
