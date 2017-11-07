@@ -31,7 +31,6 @@ Environment=PROGNAME=http2smtp
 Environment=ROOTDIR=/usr/lib64/http2smtp
 ExecStart=/usr/lib64/http2smtp/erts-%ERTS%/bin/erlexec -boot ${ROOTDIR}/releases/%VSN%/http2smtp -mode embedded -config ${ROOTDIR}/releases/%VSN%/sys.config -name http2smtp -setcookie ${COOKIE} -noinput +K true
 ExecStop=/bin/kill $MAINPID
-ExecStopPost=/bin/sh -c 'while $(/bin/kill -0 $MAINPID 2>/dev/null); do sleep 1; done'
 User=nobody
 WorkingDirectory=/usr/lib64/http2smtp
 Restart=on-failure

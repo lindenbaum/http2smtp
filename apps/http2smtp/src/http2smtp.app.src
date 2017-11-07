@@ -34,7 +34,6 @@
     kernel,
     stdlib,
     sasl,
-    qdate,
     gen_smtp,
     cowlib,
     cowboy

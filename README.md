@@ -48,11 +48,6 @@ following options can/must be applied.
 
   Default `Subject` value, used if not part of the POST. Default is _http2smtp_.
 
-* `{timezone, string() | auto}`
-
-  Default timezone to use for the SMTP `Date` field. Default is _auto_. For more
-  information refer to the [qdate](https://github.com/choptastic/qdate) project.
-
 * `{body_opts, [cowboy_req:body_opt()]}`
 
   Options passed to [cowboy](https://github.com/ninenines/cowboy/)'s body read

@@ -40,7 +40,6 @@
 -define(FROM, list_to_binary("http2smtp@" ++ element(2, inet:gethostname()))).
 -define(RATE_LIMIT, 2).
 -define(SUBJECT, <<"http2smtp">>).
--define(TIMEZONE, auto).
 
 %%%=============================================================================
 %%% API
@@ -72,7 +71,6 @@ path_matches() ->
           rate_limit :: pos_integer(),
           smtp_opts  :: proplists:proplist(),
           subject    :: binary(),
-          timezone   :: string() | auto,
           to         :: binary()}).
 
 %%------------------------------------------------------------------------------
@@ -94,7 +92,6 @@ init({tcp, _}, Req, Opts) ->
         rate_limit = get_value(rate_limit, ContextOpts, Opts, ?RATE_LIMIT),
         smtp_opts = [_ | _] = get_value(smtp_opts, Opts, undefined),
         subject = to_bin(get_value(subject, Opts, ?SUBJECT)),
-        timezone = get_value(timezone, Opts, ?TIMEZONE),
         to = get_to(ContextOpts, Opts)}}.
 
 %%------------------------------------------------------------------------------
@@ -192,7 +189,7 @@ handle_mail(From, Subject, Body, Attachments, Req, State) ->
             {<<"To">>, State#state.to},
             {<<"Subject">>, Subject}, %% will be verified/encoded by gen_smtp
             {<<"Message-ID">>, message_id()},
-            {<<"Date">>, datestr(State#state.timezone)},
+            {<<"Date">>, cowboy_clock:rfc1123()},
             {<<"MIME-Version">>, <<"1.0">>},
             {<<"X-Mailer">>, <<"http2smtp">>}
            ] ++ to_cc(State),  %% will be verified/encoded by gen_smtp
@@ -336,12 +333,6 @@ is_mail(B) when is_binary(B) -> length([true || <<"@">> <= B]) =:= 1.
 %% @private
 %%------------------------------------------------------------------------------
 message_id() -> integer_to_binary(crypto:rand_uniform(100000000, 999999999)).
-
-%%------------------------------------------------------------------------------
-%% @private
-%%------------------------------------------------------------------------------
-datestr(Timezone) ->
-    qdate:to_string(<<"D, j M Y G:i:s O">>, Timezone, os:timestamp()).
 
 %%------------------------------------------------------------------------------
 %% @private
