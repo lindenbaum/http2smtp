@@ -22,7 +22,7 @@
  http2smtp,
  [
   {description, "Forward HTTP data via SMTP"},
-  {vsn, "1.0.0"},
+  {vsn, "1.0.1"},
   {registered,
    [
     http2smtp_rate,
