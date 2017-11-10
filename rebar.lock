@@ -6,7 +6,7 @@
  {<<"lager">>,{pkg,<<"lager">>,<<"3.2.4">>},0},
  {<<"ranch">>,{pkg,<<"ranch">>,<<"1.4.0">>},1},
  {<<"recon">>,{pkg,<<"recon">>,<<"2.3.2">>},0},
- {<<"syslog">>,{pkg,<<"syslog_app">>,<<"3.1.0">>},0}]}.
+ {<<"syslog">>,{pkg,<<"syslog_app">>,<<"3.4.1">>},0}]}.
 [
 {pkg_hash,[
  {<<"cowboy">>, <<"A324A8DF9F2316C833A470D918AAF73AE894278B8AA6226CE7A9BF699388F878">>},
@@ -16,5 +16,5 @@
  {<<"lager">>, <<"A6DEB74DAE7927F46BD13255268308EF03EB206EC784A94EAF7C1C0F3B811615">>},
  {<<"ranch">>, <<"10272F95DA79340FA7E8774BA7930B901713D272905D0012B06CA6D994F8826B">>},
  {<<"recon">>, <<"4444C879BE323B1B133EEC5241CB84BD3821EA194C740D75617E106BE4744318">>},
- {<<"syslog">>, <<"EE5D21EDE60313EC10A810AE96E1880859418BEF0F11499A445186E1CC414FB2">>}]}
+ {<<"syslog">>, <<"885F94F72836D6137E8A4B08A0BD1A224E3FBDC2F3EA811D0E4E1BB7926E279D">>}]}
 ].
